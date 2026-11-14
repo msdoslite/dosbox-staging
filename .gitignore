@@ -844,3 +844,7 @@ FodyWeavers.xsd
 *.com
 *.EXE
 *.COM
+
+# VMSMOUNT's checked-in makefiles are source, not generated CMake output.
+!contrib/vmsmount/**/makefile
+!contrib/vmsmount/makefile
