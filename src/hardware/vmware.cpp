@@ -3,6 +3,9 @@
 
 #include "vmware.h"
 
+#include "vmware_hgfs.h"
+#include <algorithm>
+#include <map>
 #include <set>
 
 #include "config/setup.h"
@@ -216,10 +219,155 @@ static void command_abs_pointer()
 	execute_command(command);
 }
 
+// Prototype HGFS transport. Each channel owns its transfer state; the TCLO
+// timer can interleave with a filesystem request on RPCI.
+struct HgfsChannel {
+	uint16_t id                  = 0;
+	uint32_t type                = 0;
+	uint32_t expected            = 0;
+	size_t cursor                = 0;
+	std::vector<uint8_t> request = {}, reply = {};
+};
+static bool hgfs_enabled                             = false;
+static bool hgfs_trace                               = false;
+static std::map<uint16_t, HgfsChannel> hgfs_channels = {};
+static uint16_t hgfs_next_channel                    = 1;
+static void hgfs_dispatch(HgfsChannel& c)
+{
+	c.reply  = c.type == 0x49435052 ? VmwareHgfs::Request(c.request, c.id)
+	                                : std::vector<uint8_t>{};
+	c.cursor = 0;
+	if (hgfs_trace && c.type == 0x49435052 && c.request.size() >= 10 &&
+	    c.request[0] == 'f' && c.request[1] == ' ') {
+		const auto op = c.request[6];
+		if (op != 25) {
+			LOG_MSG("HGFS: op=%u request=%zu reply=%zu status=%u",
+			        op,
+			        c.request.size(),
+			        c.reply.size(),
+			        c.reply.size() >= 10 ? c.reply[6] : 255);
+		}
+	}
+}
+static void hgfs_command()
+{
+	const auto command = reg_ecx >> 16;
+	reg_eax            = 0;
+	if (command == 0) {
+		const auto type = reg_ebx & 0x7fffffff;
+		if (hgfs_channels.size() >= 32 ||
+		    (type != 0x49435052 && type != 0x4f4c4354)) {
+			reg_ecx = 0;
+			return;
+		}
+		while (!hgfs_next_channel || hgfs_channels.count(hgfs_next_channel)) {
+			++hgfs_next_channel;
+		}
+		const auto id = hgfs_next_channel++;
+		auto& c       = hgfs_channels[id];
+		c.type        = type;
+		c.id          = id;
+		reg_edx       = uint32_t(id) << 16;
+		reg_esi       = 0x13572468;
+		reg_edi       = 0x24681357;
+		reg_ecx       = 0x10000;
+		return;
+	}
+	const auto id = uint16_t(reg_edx >> 16);
+	auto it       = hgfs_channels.find(id);
+	if (it == hgfs_channels.end()) {
+		reg_ecx = 0;
+		return;
+	}
+	if (reg_esi != 0x13572468 || reg_edi != 0x24681357) {
+		reg_ecx = 0;
+		return;
+	}
+	auto& c = it->second;
+	reg_ecx = 0x10000;
+	switch (command) {
+	case 1:
+		if (reg_ebx > 61440) {
+			c.expected = 0;
+			c.request.clear();
+			c.reply.clear();
+			reg_ecx = 0;
+			break;
+		}
+		c.expected = reg_ebx;
+		c.request.clear();
+		c.reply.clear();
+		c.cursor = 0;
+		if (!c.expected) {
+			hgfs_dispatch(c);
+		}
+		break;
+	case 3:
+		reg_ebx = uint32_t(c.reply.size());
+		reg_edx = 0x10000;
+		reg_ecx = c.reply.empty() ? 0x10000 : 0x30000;
+		break;
+	case 5:
+		c.reply.clear();
+		c.cursor = 0;
+		break;
+	case 6: {
+		const bool was_rpci = c.type == 0x49435052;
+		hgfs_channels.erase(it);
+		if (was_rpci) {
+			VmwareHgfs::CloseSession(id);
+			if (hgfs_trace) {
+				LOG_MSG("HGFS: RPCI session closed; file handles released");
+			}
+		}
+		break;
+	}
+	default: reg_ecx = 0; break;
+	}
+}
+static void hgfs_write_byte(const io_port_t, const io_val_t value, const io_width_t)
+{
+	auto it = hgfs_channels.find(uint16_t(reg_edx >> 16));
+	if (reg_eax != VmWareMagic || it == hgfs_channels.end() ||
+	    reg_ebp != 0x13572468 || reg_edi != 0x24681357) {
+		reg_ebx = 0;
+		return;
+	}
+	auto& c = it->second;
+	if (c.request.size() >= c.expected) {
+		reg_ebx = 0;
+		return;
+	}
+	c.request.push_back(uint8_t(value));
+	if (c.request.size() == c.expected) {
+		hgfs_dispatch(c);
+	}
+}
+static uint32_t hgfs_read_byte(const io_port_t, const io_width_t)
+{
+	auto it = hgfs_channels.find(uint16_t(reg_edx >> 16));
+	if (reg_eax != VmWareMagic || it == hgfs_channels.end() ||
+	    reg_esi != 0x13572468 || reg_ebp != 0x24681357) {
+		reg_ebx = 0;
+		return 0;
+	}
+	auto& c = it->second;
+	if (c.cursor >= c.reply.size()) {
+		reg_ebx = 0;
+		return 0;
+	}
+	return c.reply[c.cursor++];
+}
+
 static uint32_t port_read_vmware(const io_port_t, const io_width_t)
 {
 	if (reg_eax != VmWareMagic) {
 		return 0;
+	}
+
+	if (hgfs_enabled && reg_cx == 0x1e) {
+		hgfs_command();
+		return reg_eax;
 	}
 
 	reg_eax = VmWareAcknowledged;
@@ -327,6 +475,9 @@ bool VMWARE_I8042_WriteCommandPort(const uint32_t value)
 
 void VMWARE_NotifyBooting()
 {
+	hgfs_channels.clear();
+	hgfs_next_channel = 1;
+	VmwareHgfs::Reset();
 	program_segment_name = {};
 }
 
@@ -345,14 +496,40 @@ void VMWARE_Init()
 	has_feature_mouse = MOUSEVMM_IsSupported(MouseVmmProtocol::VmWare);
 
 	// TODO: implement more features:
-	// - shared directories, for VMSMount tool:
+	// - extend HGFS compatibility beyond VMSMOUNT:
 	//   https://github.com/eduardocasino/vmsmount
 	// - everything supported by the official Windows 9x VMware Tools
 	// - (very far future) possibly Windows 9x 3D acceleration using
 	//   project like SoftGPU (or whatever will be available):
 	//   https://github.com/JHRobotics/softgpu
 
-	is_interface_enabled = has_feature_mouse;
+    const auto section = get_section("hgfs");
+    const auto root = section->GetPath("root")->realpath.string();
+    const auto allow_write = section->GetBool("write");
+    hgfs_trace = section->GetBool("trace");
+    hgfs_enabled = VmwareHgfs::Init(root.c_str(), allow_write, section->GetBool("flat"));
+    if (!root.empty() && !hgfs_enabled) {
+        LOG_WARNING("HGFS: Could not open shared directory '%s'", root.c_str());
+    }
+    for (int i = 1; i <= 8; ++i) {
+        const auto prefix = "share" + std::to_string(i);
+        const auto name = std::string(section->GetString((prefix + "_name").c_str()));
+        const auto path = section->GetPath((prefix + "_root").c_str())->realpath.string();
+        if (name.empty() && path.empty()) { continue; }
+        if (VmwareHgfs::AddShare(name.c_str(), path.c_str(),
+                                section->GetBool((prefix + "_write").c_str()))) {
+            hgfs_enabled = true;
+            LOG_MSG("HGFS: named share %s enabled", name.c_str());
+        } else {
+            LOG_WARNING("HGFS: cannot enable named share %s", name.c_str());
+        }
+    }
+	if (hgfs_enabled) {
+		IO_RegisterReadHandler(0x5659, hgfs_read_byte, io_width_t::byte);
+		IO_RegisterWriteHandler(0x5659, hgfs_write_byte, io_width_t::byte);
+		LOG_MSG("HGFS: SHARED folder enabled (%s)", allow_write ? "read/write" : "read-only");
+	}
+	is_interface_enabled = has_feature_mouse || hgfs_enabled;
 	if (is_interface_enabled) {
 		IO_RegisterReadHandler(port_num_vmware,
 		                       port_read_vmware,
@@ -362,8 +539,16 @@ void VMWARE_Init()
 
 void VMWARE_Destroy()
 {
+	if (hgfs_enabled) {
+		IO_FreeReadHandler(0x5659, io_width_t::byte);
+		IO_FreeWriteHandler(0x5659, io_width_t::byte);
+	}
+	hgfs_channels.clear();
+	hgfs_next_channel = 1;
+	hgfs_enabled      = false;
+	VmwareHgfs::Init(nullptr);
 	if (is_interface_enabled) {
-		IO_FreeReadHandler(port_num_virtualbox, io_width_t::dword);
+		IO_FreeReadHandler(port_num_vmware, io_width_t::dword);
 		is_interface_enabled = false;
 	}
 }

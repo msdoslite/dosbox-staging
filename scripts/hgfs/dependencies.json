@@ -1,0 +1,12 @@
+{
+  "iir": {
+    "url": "https://codeload.github.com/berndporr/iir1/tar.gz/164c12e7c7979dd016629adcfa188374caad3233",
+    "sha256": "03736f216ebd294a53574386e78130242c34c6e98426b66487332b78f43eb36b",
+    "file": "iir.tar.gz"
+  },
+  "watcom": {
+    "url": "https://github.com/open-watcom/open-watcom-v2/releases/download/2026-11-01-Build/ow-snapshot.tar.xz",
+    "sha256": "89e90b7544cf3ea4a38124ec4c104a5027f31101405d7115c3f833daa465bb48",
+    "file": "watcom.tar.xz"
+  }
+}

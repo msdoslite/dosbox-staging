@@ -1,3 +1,9 @@
+> **Unofficial experimental HGFS fork.** This local fork adds shared-folder drives
+> for DOS booted from an image, using the included modified VMSMOUNT driver.
+> It is not affiliated with or endorsed by the DOSBox Staging team.
+> See [HGFS setup, build instructions, tests, and limitations](docs/HGFS.md).
+> The upstream project information below is retained for attribution and context.
+
 # DOSBox Staging
 
 ![GPL-2.0-or-later][gpl-badge]
@@ -169,3 +175,9 @@ git fetch origin "refs/notes/*:refs/notes/*"
 
 [build-linux-badge]: https://img.shields.io/github/actions/workflow/status/dosbox-staging/dosbox-staging/linux.yml?label=Linux%20%28x86_64%29
 [build-linux-ci]:    https://github.com/dosbox-staging/dosbox-staging/actions/workflows/linux.yml?query=branch%3Amain
+
+## AI assistance
+
+The HGFS changes, tests, documentation, and refactoring were developed with
+assistance from OpenAI's Codex (ChatGPT). This does not imply upstream or OpenAI
+endorsement. Maintenance of this experimental fork is best-effort.

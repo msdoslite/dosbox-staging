@@ -1358,6 +1358,59 @@ static void notify_dosbox_setting_updated(const SectionProp& section,
 	}
 }
 
+static void add_hgfs_config_section(const ConfigPtr& conf)
+{
+	using enum Property::Changeable::Value;
+	auto section = conf->AddSection("hgfs");
+	section->AddPath("root", OnlyAtStart, "")
+	        ->SetHelp(
+	                "Optional unnamed host folder for the original VMSMOUNT driver. Empty disables\n"
+	                "the unnamed share. Named shares below work independently of this setting.\n"
+	                "\n"
+	                "HGFS provides host folders to a real DOS guest booted from a disk image.\n"
+	                "Install the included modified VMSMOUNT.EXE inside the guest; VMware is not\n"
+	                "required. These are file-level drives, not sector-addressable FAT disks.\n"
+	                "\n"
+	                "All HGFS settings require a full emulator restart. No folder is exported\n"
+	                "by default. Use existing absolute host paths without quotes. Do not use\n"
+	                "shell variables or '~'. Grant write access only to the folders you intend\n"
+	                "the guest to modify. Symlinks and multiply-linked files are rejected.");
+	section->AddBool("write", OnlyAtStart, false)
+	        ->SetHelp(
+	                "Allow writes to the unnamed root folder (read-only by default).\n"
+	                "This does not change the permissions of named shares.");
+	section->AddBool("flat", OnlyAtStart, false)
+	        ->SetHelp(
+	                "Expose the unnamed folder directly at the guest drive root. Otherwise\n"
+	                "it appears inside SHARED. Named shares always use the drive root.");
+	section->AddBool("trace", OnlyAtStart, false)
+	        ->SetHelp("Log HGFS operations for troubleshooting. Normally leave this disabled.");
+	for (int i = 1; i <= 8; ++i) {
+		const auto prefix = "share" + std::to_string(i);
+		auto name = section->AddString(prefix + "_name", OnlyAtStart, "");
+		name->SetHelp(
+		        i == 1 ? "Unique share name: 1-16 ASCII letters, digits, '_' or '-'; case-insensitive.\n"
+		                 "Empty name and root disable this slot. Configure up to eight folders.\n"
+		                 "\n"
+		                 "Example: share1_name = games, share1_root = /path/to/games, and\n"
+		                 "share1_write = true. In DOS run: VMSMOUNT /L:D /SHARE:games\n"
+		                 "For another folder configure share2_* and select a free drive letter:\n"
+		                 "VMSMOUNT /L:E /SHARE:work. Slot numbers do not determine drive letters.\n"
+		                 "Add these commands to the guest AUTOEXEC.BAT for automatic mounting.\n"
+		                 "\n"
+		                 "To detach only E:, close its files, switch to C:, then run\n"
+		                 "VMSMOUNT /U /L:E. Other drives remain available. Detaching the final\n"
+		                 "drive unloads the resident driver. A drive with open files is busy."
+			       : "Another named share. See share1_name for mounting instructions.");
+		section->AddPath(prefix + "_root", OnlyAtStart, "")
+		        ->SetHelp(
+		                "Existing host directory exported by this named share. Use an absolute\n"
+		                "path without quotes. A missing directory disables only this share.");
+		section->AddBool(prefix + "_write", OnlyAtStart, false)
+		        ->SetHelp("Allow changes to this named folder (read-only by default).");
+	}
+}
+
 static void add_dosbox_config_section(const ConfigPtr& conf)
 {
 	assert(conf);
@@ -1671,6 +1724,7 @@ void DOSBOX_InitModuleConfigsAndMessages()
 	// this init method gets called.
 
 	add_dosbox_config_section(control);
+	add_hgfs_config_section(control);
 
 	RENDER_AddConfigSection(control);
 	COMPOSITE_AddConfigSection(*control);

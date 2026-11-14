@@ -76,6 +76,7 @@ target_sources(dosboxcommon PRIVATE
   timer.cpp
   virtualbox.cpp
   vmware.cpp
+  vmware_hgfs.cpp
 )
 
 target_sources(dosbox PRIVATE port_containers.cpp)
