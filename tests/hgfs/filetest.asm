@@ -76,6 +76,23 @@ start:
  mov ah,3eh
  int 21h
  ok
+ ; AH=3Ch must still truncate an existing file after the create-new fix.
+ mov dx,file
+ xor cx,cx
+ mov ah,3ch
+ int 21h
+ ok
+ mov bx,ax
+ mov ax,4202h
+ xor cx,cx
+ xor dx,dx
+ int 21h
+ ok
+ or ax,dx
+ jnz fail
+ mov ah,3eh
+ int 21h
+ ok
  phase msg_attr
  mov dx,file
  mov cx,27h ; readonly + hidden + system + archive
