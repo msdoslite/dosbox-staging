@@ -109,6 +109,8 @@ The convenience build uses system libraries and disables MT-32 and upstream test
 
 ## Tests
 
+See [HGFS-VALIDATION.md](HGFS-VALIDATION.md) for the local preparation results.
+
 ```sh
 python3 scripts/hgfs/test-protocol.py
 python3 scripts/hgfs/test-defaults.py
