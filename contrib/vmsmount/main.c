@@ -725,16 +725,20 @@ static int DriveBusy(uint8_t drive)
     struct SREGS segs;
     // Ask DOS for each entry: our partial SFT declaration is not the stride
     // of the host DOS's full SFT entries (FreeDOS includes additional fields).
-    for (table = fpSysVars->fileTable; table != (SFTT __far *)-1; table = table->nextSFTT) {
-        for (i = 0; i < table->sfttCount; ++i, ++index) {
+    for (table = fpSysVars->fileTable; table != (SFTT __far *)-1; table = table->nextSFTT)
+    {
+        for (i = 0; i < table->sfttCount; ++i, ++index)
+        {
             SFT __far *sft;
             segread(&segs);
             r.x.ax = 0x1216;
             r.x.bx = index;
             int86x(0x2f, &r, &r, &segs);
-            if (r.x.cflag) continue;
+            if (r.x.cflag)
+                continue;
             sft = (SFT __far *)MK_FP(segs.es, r.x.di);
-            if (sft->handleCount && (sft->flags & NETWORK) && (sft->flags & 0x3F) == drive) return 1;
+            if (sft->handleCount && (sft->flags & NETWORK) && (sft->flags & 0x3F) == drive)
+                return 1;
         }
     }
     return 0;
@@ -743,20 +747,34 @@ static int ChangeMounts(Signature __far *sig)
 {
     uint8_t n, count = 0, target = *fpDriveNum;
     DriveMount __far *maps;
-    if (sig->multiMagic != MULTI_MAGIC) {
+    if (sig->multiMagic != MULTI_MAGIC)
+    {
         fputs("Restart DOS with VMSMOUNT HGFS2 before changing mounts.\n", stderr);
         return ERR_INSTLLD;
     }
     maps = sig->mounts;
-    for (n = 0; n < 26; ++n) if (maps[n].active) { ++count; if (*fpDriveNum == 0xFF) target = n; }
-    if (uninstall) {
-        if ((*fpDriveNum == 0xFF && count != 1) || target >= 26 || !maps[target].active) {
+    for (n = 0; n < 26; ++n)
+        if (maps[n].active)
+        {
+            ++count;
+            if (*fpDriveNum == 0xFF)
+                target = n;
+        }
+    if (uninstall)
+    {
+        if ((*fpDriveNum == 0xFF && count != 1) || target >= 26 || !maps[target].active)
+        {
             fputs("Specify a mounted drive: VMSMOUNT /U /L:D\n", stderr);
             return ERR_NOTINST;
         }
-        if (DriveBusy(target)) { fputs("Drive has open files.\n", stderr); return ERR_UNINST; }
+        if (DriveBusy(target))
+        {
+            fputs("Drive has open files.\n", stderr);
+            return ERR_UNINST;
+        }
         currDir = maps[target].cds;
-        if (count == 1) {
+        if (count == 1)
+        {
             *sig->fpRpci = maps[target].rpc;
             UninstallDriver();
             return ERR_UNINST;
@@ -768,21 +786,28 @@ static int ChangeMounts(Signature __far *sig)
         currDir->u.Net.redirIFSRecordPtr = (void __far *)0xffffffffui32;
         return ERR_SUCCESS;
     }
-    if (!shareName[0] || target < 3 || target >= fpSysVars->lastDrive || maps[target].active) {
+    if (!shareName[0] || target < 3 || target >= fpSysVars->lastDrive || maps[target].active)
+    {
         fputs("Use an unused drive and /SHARE:name.\n", stderr);
         return ERR_INSTLLD;
     }
-    if (fpSysVars->currDir[target].flags & (NETWORK | PHYSICAL)) return ERR_BADDRV;
-    if (GetSDA()) return ERR_SYSTEM;
+    if (fpSysVars->currDir[target].flags & (NETWORK | PHYSICAL))
+        return ERR_BADDRV;
+    if (GetSDA())
+        return ERR_SYSTEM;
     if (VMAuxBeginSession(fpRpci, fpTclo
 #ifdef DEBUG
-        , fpRpcd
+                          ,
+                          fpRpcd
 #endif
-    )) return ERR_NOSHF;
-    if (VMAuxSelectShare(fpRpci, shareName) || VMAuxSharedFolders(fpRpci) || SetCDS()) {
+                          ))
+        return ERR_NOSHF;
+    if (VMAuxSelectShare(fpRpci, shareName) || VMAuxSharedFolders(fpRpci) || SetCDS())
+    {
         VMAuxEndSession(fpRpci, fpTclo
 #ifdef DEBUG
-            , fpRpcd
+                        ,
+                        fpRpcd
 #endif
         );
         return ERR_NOSHF;

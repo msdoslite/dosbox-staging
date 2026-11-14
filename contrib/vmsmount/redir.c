@@ -1159,7 +1159,8 @@ static void SpecialOpen(void)
 
 static int SelectDrive(uint8_t n)
 {
-    if (n >= 26 || !mounts[n].active) return 0;
+    if (n >= 26 || !mounts[n].active)
+        return 0;
     driveNum = n;
     fpCDS = mounts[n].cds;
     rpci = mounts[n].rpc;
@@ -1174,15 +1175,19 @@ static int IsCallForUs(uint8_t function)
     SFT __far *sft = (SFT __far *)MK_FP(r->w.es, r->w.di);
     CDS __far *cds;
     uint8_t n;
-    if (function == 0x00 || function == 0x1D) return 1;
+    if (function == 0x00 || function == 0x1D)
+        return 1;
     if (function == 0x21 || (function >= 0x06 && function <= 0x0B))
         return (sft->flags & NETWORK) && SelectDrive(sft->flags & 0x3F);
     if (function == 0x1C)
         return (fpSDB->driveNumber & 0x40) && SelectDrive(fpSDB->driveNumber & 0x1F);
     cds = function == 0x0C ? (CDS __far *)MK_FP(r->w.es, r->w.di) : fpSDA->currentCDS;
-    for (n = 0; n < 26; ++n) {
-        if (mounts[n].active && mounts[n].cds == cds && SelectDrive(n)) {
-            if (function != 0x0C) FillFcbName(fpFcbName1, fpFileName1);
+    for (n = 0; n < 26; ++n)
+    {
+        if (mounts[n].active && mounts[n].cds == cds && SelectDrive(n))
+        {
+            if (function != 0x0C)
+                FillFcbName(fpFcbName1, fpFileName1);
             return 1;
         }
     }
